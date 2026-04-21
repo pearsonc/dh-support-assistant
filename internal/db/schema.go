@@ -79,5 +79,6 @@ type TicketEvent struct {
 	AuthorName     string    `db:"author_name"`
 	AuthorContext  string    `db:"author_context"`
 	Body           string    `db:"body"`
+	BodyHash       string    `db:"body_hash"`
 	SourceImportID int64     `db:"source_import_id"`
 }

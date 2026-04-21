@@ -46,8 +46,12 @@ run:
 	$(GO) run ./cmd/server
 
 ingest:
-	@if [ -z "$(FILE)" ]; then echo "usage: make ingest FILE=path/to/export.xlsx"; exit 2; fi
-	$(GO) run ./cmd/ingest -file=$(FILE)
+	@if [ -z "$(FILE)" ]; then echo "usage: make ingest FILE=path/to/export.xlsx (must live under export-data/)"; exit 2; fi
+	@# Runs the ingest binary INSIDE the already-running app container so
+	@# the internal: true support-net is honoured — host processes cannot
+	@# reach postgres directly. The container sees export-data/ via the
+	@# read-only bind mount declared in docker/compose.yaml.
+	$(COMPOSE) -f $(COMPOSE_FILE) exec -T app /usr/local/bin/ingest -file=/app/export-data/$$(basename $(FILE))
 
 # Host-side ad-hoc migrations. Requires DH_DB_URL in the environment
 # pointing at a reachable Postgres (the containerised stack applies

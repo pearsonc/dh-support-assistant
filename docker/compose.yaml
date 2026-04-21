@@ -46,6 +46,12 @@ services:
     # separate, ingress-only network).
     volumes:
       - ../logs:/app/logs
+      # Read-only mount of the host's export-data/ so the in-container
+      # ingest CLI can read files dropped there by the user without
+      # breaching [Rule: Zero egress]. Ingest runs via
+      # `docker compose exec app ingest -file=/app/export-data/...`
+      # — see Makefile `ingest` target.
+      - ../export-data:/app/export-data:ro
     networks:
       - support-net
     depends_on:
