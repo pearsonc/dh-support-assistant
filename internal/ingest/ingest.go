@@ -73,5 +73,20 @@ func Run(ctx context.Context, pool *pgxpool.Pool, logger zerolog.Logger, path st
 		Int64("elapsed_ms", summary.ElapsedMS).
 		Msg("ingest: write complete")
 
+	// Surface genuine ticket_events_idem_key dedup activity at warn level
+	// so the operator notices it trending up over time. Within-file bursts
+	// (ServiceNow emits the same (ticket, second, author, body) more than
+	// once under workflow automation) and cross-file overlap both land
+	// here; the short-circuit path is excluded because its EventsSkipped
+	// just echoes the full file's journal count, which is expected noise.
+	if !summary.ShortCircuited && summary.EventsSkipped > 0 {
+		logger.Warn().
+			Str("import_hash", hash).
+			Str("file_name", fileName).
+			Int("events_new", summary.EventsNew).
+			Int("events_skipped", summary.EventsSkipped).
+			Msg("ingest: idempotency-dedupe hit on non-short-circuit run")
+	}
+
 	return summary, nil
 }

@@ -15,12 +15,24 @@ import (
 // Summary is the per-run accounting emitted by the orchestrator as JSON
 // on stdout. Fields match the Phase 1 plan's acceptance spec exactly:
 // tickets_new, tickets_updated, events_new, events_skipped, elapsed_ms.
+//
+// ShortCircuited is internal-only (json:"-") and lets the orchestrator
+// distinguish the two distinct paths that populate EventsSkipped:
+//   - short-circuit (import_hash already seen): Write never walks
+//     individual events, and EventsSkipped is the full journal count from
+//     the file. Not worth a warn line — this is the expected re-ingest
+//     outcome the user triggered.
+//   - per-event DO NOTHING against ticket_events_idem_key: the writer
+//     saw at least one (ticket, ts, author, body_hash) already present
+//     in the DB. Worth a warn line so the operator notices dedup activity
+//     trending up over time.
 type Summary struct {
 	TicketsNew     int   `json:"tickets_new"`
 	TicketsUpdated int   `json:"tickets_updated"`
 	EventsNew      int   `json:"events_new"`
 	EventsSkipped  int   `json:"events_skipped"`
 	ElapsedMS      int64 `json:"elapsed_ms"`
+	ShortCircuited bool  `json:"-"`
 }
 
 // Write ingests records under a single transaction. Idempotency is
@@ -58,6 +70,7 @@ func Write(ctx context.Context, pool *pgxpool.Pool, hash, fileName string, recor
 	var s Summary
 	if alreadyImported {
 		s.EventsSkipped = totalEvents
+		s.ShortCircuited = true
 		if err := tx.Commit(ctx); err != nil {
 			return s, fmt.Errorf("ingest: commit short-circuit: %w", err)
 		}
