@@ -22,6 +22,12 @@ func TestGetStatsHappyPath(t *testing.T) {
 			RowCount:   412,
 			IngestedAt: time.Date(2026, 4, 21, 10, 30, 0, 0, time.UTC),
 		},
+		PriorityBuckets: map[string]int{
+			"critical": 5, "high": 12, "moderate": 200, "low": 100, "planning": 95,
+		},
+		StaleCount:         47,
+		WeightsInUse:       queries.StatsWeights{Severity: 0.5, Age: 0.2, Due: 0.3},
+		StaleThresholdDays: 3,
 	}
 
 	handler, mock := newTestAPI(&mockQueries{statsResult: want})
@@ -43,6 +49,18 @@ func TestGetStatsHappyPath(t *testing.T) {
 	}
 	if got.LastImport == nil || got.LastImport.RowCount != 412 {
 		t.Errorf("LastImport = %+v, want RowCount=412", got.LastImport)
+	}
+	if got.StaleCount != 47 {
+		t.Errorf("StaleCount = %d, want 47", got.StaleCount)
+	}
+	if got.StaleThresholdDays != 3 {
+		t.Errorf("StaleThresholdDays = %d, want 3", got.StaleThresholdDays)
+	}
+	if got.WeightsInUse.Severity != 0.5 || got.WeightsInUse.Age != 0.2 || got.WeightsInUse.Due != 0.3 {
+		t.Errorf("WeightsInUse = %+v, want {0.5, 0.2, 0.3}", got.WeightsInUse)
+	}
+	if got.PriorityBuckets["critical"] != 5 || got.PriorityBuckets["moderate"] != 200 {
+		t.Errorf("PriorityBuckets = %v, want {critical: 5, moderate: 200}", got.PriorityBuckets)
 	}
 }
 

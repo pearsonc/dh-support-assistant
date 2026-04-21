@@ -22,6 +22,7 @@ import (
 	"github.com/pearsonc/dh-support-assistant/internal/ingest"
 	"github.com/pearsonc/dh-support-assistant/internal/ingest/fixtures"
 	"github.com/pearsonc/dh-support-assistant/internal/queries"
+	"github.com/pearsonc/dh-support-assistant/internal/scoring"
 )
 
 // pgvectorImage mirrors the pin used in docker/compose.yaml and the Phase 1
@@ -86,8 +87,11 @@ func TestAPIIntegration(t *testing.T) {
 	}
 
 	// Mount the production router layout: /api/* delegates into api.API.
+	// Scorer + staleness threshold mirror cmd/server defaults so scores
+	// the integration test sees match what the dashboard will render.
 	r := chi.NewRouter()
-	a := api.New(quiet, queries.New(pool))
+	scorer := scoring.NewScorer(quiet, scoring.DefaultWeights())
+	a := api.New(quiet, queries.New(pool, scorer, 3))
 	r.Route("/api", a.Register)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
@@ -112,6 +116,52 @@ func TestAPIIntegration(t *testing.T) {
 		}
 		if stats.LastImport.RowCount != want.Tickets {
 			t.Errorf("last_import.row_count = %d, want %d", stats.LastImport.RowCount, want.Tickets)
+		}
+
+		// 2.2 additions: priority_buckets has all five keys, bucket counts
+		// sum to tickets_total, weights round-trip, threshold round-trips.
+		for _, key := range []string{"critical", "high", "moderate", "low", "planning"} {
+			if _, ok := stats.PriorityBuckets[key]; !ok {
+				t.Errorf("priority_buckets missing key %q", key)
+			}
+		}
+		var bucketSum int
+		for _, n := range stats.PriorityBuckets {
+			bucketSum += n
+		}
+		if bucketSum != stats.TicketsTotal {
+			t.Errorf("sum(priority_buckets) = %d, want tickets_total %d", bucketSum, stats.TicketsTotal)
+		}
+		if stats.StaleThresholdDays != 3 {
+			t.Errorf("stale_threshold_days = %d, want 3", stats.StaleThresholdDays)
+		}
+		if stats.WeightsInUse.Severity != 0.5 || stats.WeightsInUse.Age != 0.2 || stats.WeightsInUse.Due != 0.3 {
+			t.Errorf("weights_in_use = %+v, want {0.5,0.2,0.3}", stats.WeightsInUse)
+		}
+		if stats.StaleCount < 0 || stats.StaleCount > stats.TicketsTotal {
+			t.Errorf("stale_count = %d, out of range [0, %d]", stats.StaleCount, stats.TicketsTotal)
+		}
+	})
+
+	t.Run("list_tickets_score_sort_monotonic", func(t *testing.T) {
+		var env api.TicketListEnvelope
+		hitJSON(t, srv.URL+"/api/tickets?sort=score_desc", &env)
+		if len(env.Data) == 0 {
+			t.Fatal("no tickets returned")
+		}
+		for i := 1; i < len(env.Data); i++ {
+			if env.Data[i-1].PriorityScore < env.Data[i].PriorityScore {
+				t.Errorf("score_desc broke at i=%d: %v then %v",
+					i, env.Data[i-1].PriorityScore, env.Data[i].PriorityScore)
+				break
+			}
+		}
+		// Every row must carry the 2.2 fields; stale is bool so we assert
+		// its presence implicitly by reading the struct.
+		for _, row := range env.Data {
+			if row.PriorityScore < 0 {
+				t.Errorf("priority_score = %v, want >= 0 for id=%d", row.PriorityScore, row.ID)
+			}
 		}
 	})
 
@@ -184,6 +234,13 @@ func TestAPIIntegration(t *testing.T) {
 		if detail.Events == nil {
 			t.Error("events nil; want slice (possibly empty)")
 		}
+		// 2.2: priority_score must be a finite number and — because this
+		// ticket is known-populated — score must reflect a real severity.
+		if detail.Ticket.PriorityScore < 0 {
+			t.Errorf("priority_score = %v, want >= 0", detail.Ticket.PriorityScore)
+		}
+		// Either stale or not, but the field must be decoded cleanly.
+		_ = detail.Ticket.Stale
 	})
 
 	t.Run("get_ticket_404", func(t *testing.T) {

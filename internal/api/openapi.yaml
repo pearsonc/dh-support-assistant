@@ -1,12 +1,13 @@
 openapi: 3.1.0
 info:
   title: DH Support Assistant API
-  version: "2.1.0"
+  version: "2.2.0"
   description: |
     Read-only JSON API backing the Phase 2 Next.js dashboard. All endpoints
     are served from the Go app container on the internal support-net;
-    the web container proxies them to the host browser. Phase 2.1 ships
-    counts + ticket listing; priority scoring and staleness land in 2.2.
+    the web container proxies them to the host browser. Phase 2.2 adds
+    priority_score + stale to the ticket DTOs and priority_buckets +
+    stale_count to /api/stats.
 
 servers:
   - url: http://app:8080
@@ -43,7 +44,7 @@ paths:
           name: sort
           schema:
             type: string
-            enum: [updated_at_desc, opened_at_desc, due_date_asc]
+            enum: [updated_at_desc, opened_at_desc, due_date_asc, score_desc]
             default: updated_at_desc
         - in: query
           name: severity
@@ -157,6 +158,8 @@ components:
         - updated_at
         - due_date
         - business_service_id
+        - priority_score
+        - stale
       properties:
         id:                   { type: integer, format: int64 }
         ticket_external_id:   { type: string }
@@ -174,6 +177,8 @@ components:
         client_name:          { type: [string, "null"] }
         country_code:         { type: [string, "null"] }
         product:              { type: [string, "null"] }
+        priority_score:       { type: number, format: double, description: "Score in [0, 1] under default weights. See /api/stats.weights_in_use." }
+        stale:                { type: boolean, description: "True when the latest support-side event is older than staleness.threshold_days." }
 
     TicketListEnvelope:
       type: object
@@ -206,6 +211,8 @@ components:
         - created_at
         - created_by
         - due_date
+        - priority_score
+        - stale
       properties:
         id:                   { type: integer, format: int64 }
         ticket_external_id:   { type: string }
@@ -239,6 +246,8 @@ components:
         client_name:          { type: [string, "null"] }
         country_code:         { type: [string, "null"] }
         product:              { type: [string, "null"] }
+        priority_score:       { type: number, format: double }
+        stale:                { type: boolean }
 
     TicketEventItem:
       type: object
@@ -312,6 +321,14 @@ components:
         row_count:   { type: integer }
         ingested_at: { type: string, format: date-time }
 
+    StatsWeights:
+      type: object
+      required: [severity, age, due]
+      properties:
+        severity: { type: number, format: double }
+        age:      { type: number, format: double }
+        due:      { type: number, format: double }
+
     StatsResult:
       type: object
       required:
@@ -321,6 +338,10 @@ components:
         - clients_total
         - business_services_total
         - last_import
+        - priority_buckets
+        - stale_count
+        - weights_in_use
+        - stale_threshold_days
       properties:
         tickets_total:    { type: integer }
         tickets_by_state:
@@ -335,6 +356,13 @@ components:
           oneOf:
             - $ref: "#/components/schemas/LastImport"
             - type: "null"
+        priority_buckets:
+          type: object
+          description: "Counts by Bucket (critical|high|moderate|low|planning). All five keys always present."
+          additionalProperties: { type: integer }
+        stale_count:           { type: integer }
+        weights_in_use:        { $ref: "#/components/schemas/StatsWeights" }
+        stale_threshold_days:  { type: integer }
 
     ErrorBody:
       type: object

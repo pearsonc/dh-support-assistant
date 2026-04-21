@@ -72,6 +72,65 @@ func TestListTicketsFilterPassthrough(t *testing.T) {
 	}
 }
 
+// TestListTicketsScoreSortAccepted is the 2.2 addition: ?sort=score_desc
+// is a known token and must flow through to queries.ListTicketsParams as
+// SortScoreDesc rather than being rejected by Normalise as unknown.
+func TestListTicketsScoreSortAccepted(t *testing.T) {
+	handler, mock := newTestAPI(&mockQueries{})
+	w := doRequest(handler, http.MethodGet, "/api/tickets?sort=score_desc")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	if mock.listTicketsParams.Sort != queries.SortScoreDesc {
+		t.Errorf("Sort = %q, want %q", mock.listTicketsParams.Sort, queries.SortScoreDesc)
+	}
+}
+
+// TestListTicketsPriorityFieldsOnWire confirms the handler marshals
+// priority_score + stale into the list envelope. The mock returns a row
+// with the 2.2 fields pre-populated; the decoded JSON must preserve both
+// so the Phase 2.4 web client can rely on them.
+func TestListTicketsPriorityFieldsOnWire(t *testing.T) {
+	items := []queries.TicketListItem{
+		{
+			ID:               1,
+			TicketExternalID: "INC0000001",
+			ShortDescription: "scored",
+			State:            "In Progress",
+			Severity:         "High",
+			Priority:         "2 - High",
+			AssignmentGroup:  "L2 Analytics",
+			OpenedAt:         time.Date(2026, 4, 14, 0, 0, 0, 0, time.UTC),
+			UpdatedAt:        time.Date(2026, 4, 20, 0, 0, 0, 0, time.UTC),
+			DueDate:          time.Date(2026, 4, 22, 0, 0, 0, 0, time.UTC),
+			PriorityScore:    0.82,
+			Stale:            true,
+		},
+	}
+	handler, _ := newTestAPI(&mockQueries{
+		listTicketsResult: queries.TicketListResult{Items: items, Total: 1},
+	})
+	w := doRequest(handler, http.MethodGet, "/api/tickets")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	var env TicketListEnvelope
+	if err := json.NewDecoder(w.Body).Decode(&env); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(env.Data) != 1 {
+		t.Fatalf("len(data) = %d, want 1", len(env.Data))
+	}
+	if env.Data[0].PriorityScore != 0.82 {
+		t.Errorf("PriorityScore = %v, want 0.82", env.Data[0].PriorityScore)
+	}
+	if !env.Data[0].Stale {
+		t.Errorf("Stale = false, want true")
+	}
+}
+
 func TestListTicketsBadParams(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

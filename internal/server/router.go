@@ -20,6 +20,7 @@ import (
 
 	"github.com/pearsonc/dh-support-assistant/internal/api"
 	"github.com/pearsonc/dh-support-assistant/internal/queries"
+	"github.com/pearsonc/dh-support-assistant/internal/scoring"
 )
 
 // readinessPingTimeout caps how long /readiness will wait on Postgres before
@@ -31,7 +32,10 @@ const readinessPingTimeout = 2 * time.Second
 // non-nil) /api/*. Pool may be nil — when it is, /readiness reports
 // {"status":"no_db"} and 503 and the /api tree is omitted so handlers don't
 // panic on a missing dependency. Inside Docker the pool is always wired.
-func New(logger zerolog.Logger, pool *pgxpool.Pool) http.Handler {
+// weights and stalenessDays flow through to internal/queries.New so every
+// /api caller scores and stale-flags tickets with the same config the
+// /api/stats response advertises.
+func New(logger zerolog.Logger, pool *pgxpool.Pool, weights scoring.Weights, stalenessDays int) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(recoverer(logger))
@@ -40,9 +44,15 @@ func New(logger zerolog.Logger, pool *pgxpool.Pool) http.Handler {
 	r.Get("/readiness", readinessHandler(logger, pool))
 
 	if pool != nil {
-		apiHandler := api.New(logger, queries.New(pool))
+		scorer := scoring.NewScorer(logger, weights)
+		apiHandler := api.New(logger, queries.New(pool, scorer, stalenessDays))
 		r.Route("/api", apiHandler.Register)
-		logger.Info().Msg("router mounted: /health, /readiness, /api/*")
+		logger.Info().
+			Float64("w_severity", weights.Severity).
+			Float64("w_age", weights.Age).
+			Float64("w_due", weights.Due).
+			Int("staleness_days", stalenessDays).
+			Msg("router mounted: /health, /readiness, /api/*")
 	} else {
 		logger.Info().Msg("router mounted: /health, /readiness (no pool — /api omitted)")
 	}

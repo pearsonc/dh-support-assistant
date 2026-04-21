@@ -7,9 +7,13 @@ import "time"
 // envelopes (see internal/api). Pointer types mark columns nullable in the
 // schema (schema.go convention). When a field is projected via a LEFT JOIN
 // that may miss, use a pointer even if the underlying column is NOT NULL.
+//
+// `db:"-"` tags on PriorityScore / Stale are deliberate: pgx's RowToStructByName
+// fails in strict mode when a struct field has no matching column, so fields
+// populated post-scan (in Go) must be explicitly ignored by the scanner.
 
-// TicketListItem is one row of GET /api/tickets. Comment / event counts land
-// in Phase 2.2; this Phase-2.1 shape is the minimum the queue needs to render.
+// TicketListItem is one row of GET /api/tickets. Phase 2.2 adds
+// PriorityScore + Stale, computed at query time by internal/scoring.
 type TicketListItem struct {
 	ID                int64     `db:"id"                  json:"id"`
 	TicketExternalID  string    `db:"ticket_external_id"  json:"ticket_external_id"`
@@ -27,6 +31,8 @@ type TicketListItem struct {
 	ClientName        *string   `db:"client_name"         json:"client_name"`
 	CountryCode       *string   `db:"country_code"        json:"country_code"`
 	Product           *string   `db:"product"             json:"product"`
+	PriorityScore     float64   `db:"-"                   json:"priority_score"`
+	Stale             bool      `db:"-"                   json:"stale"`
 }
 
 // TicketListResult bundles the page + the total so handlers can render a
@@ -73,6 +79,8 @@ type TicketDetail struct {
 	ClientName        *string   `db:"client_name"         json:"client_name"`
 	CountryCode       *string   `db:"country_code"        json:"country_code"`
 	Product           *string   `db:"product"             json:"product"`
+	PriorityScore     float64   `db:"-"                   json:"priority_score"`
+	Stale             bool      `db:"-"                   json:"stale"`
 }
 
 // TicketEventItem is one row of the timeline nested inside GET
@@ -113,8 +121,11 @@ type MarketRollup struct {
 	TicketCount          int     `db:"ticket_count"           json:"ticket_count"`
 }
 
-// StatsResult is GET /api/stats. Phase 2.1 ships counts only; priority
-// bucket counts and stale_count land in 2.2.
+// StatsResult is GET /api/stats. Phase 2.2 adds PriorityBuckets (five-way
+// split over scoring.BucketFor) and StaleCount (tickets flagged by
+// scoring.StaleAsOf). WeightsInUse surfaces the runtime weights so the
+// dashboard can explain "why did this ticket rank here?" without a
+// round-trip to config.
 type StatsResult struct {
 	TicketsTotal          int            `json:"tickets_total"`
 	TicketsByState        map[string]int `json:"tickets_by_state"`
@@ -122,6 +133,19 @@ type StatsResult struct {
 	ClientsTotal          int            `json:"clients_total"`
 	BusinessServicesTotal int            `json:"business_services_total"`
 	LastImport            *LastImport    `json:"last_import"`
+	PriorityBuckets       map[string]int `json:"priority_buckets"`
+	StaleCount            int            `json:"stale_count"`
+	WeightsInUse          StatsWeights   `json:"weights_in_use"`
+	StaleThresholdDays    int            `json:"stale_threshold_days"`
+}
+
+// StatsWeights is the transparent serialisation of scoring.Weights on the
+// /api/stats response. Kept as its own type so a koanf rename never leaks
+// through to the wire format silently.
+type StatsWeights struct {
+	Severity float64 `json:"severity"`
+	Age      float64 `json:"age"`
+	Due      float64 `json:"due"`
 }
 
 // LastImport surfaces the most recent ingest run's fingerprint so the UI

@@ -17,6 +17,7 @@ import (
 	"github.com/pearsonc/dh-support-assistant/internal/config"
 	"github.com/pearsonc/dh-support-assistant/internal/db"
 	"github.com/pearsonc/dh-support-assistant/internal/logging"
+	"github.com/pearsonc/dh-support-assistant/internal/scoring"
 	"github.com/pearsonc/dh-support-assistant/internal/server"
 )
 
@@ -107,9 +108,14 @@ func run() error {
 }
 
 func serveOnly(logger zerolog.Logger, cfg *config.Config, pool *pgxpool.Pool) error {
+	weights := scoring.Weights{
+		Severity: cfg.Scoring.WeightSeverity,
+		Age:      cfg.Scoring.WeightAge,
+		Due:      cfg.Scoring.WeightDue,
+	}
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
-		Handler:           server.New(logger, pool),
+		Handler:           server.New(logger, pool, weights, cfg.Staleness.ThresholdDays),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

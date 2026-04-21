@@ -23,3 +23,18 @@ log_level: "info"
 # operations are unavailable. Docker Compose supplies the in-stack value via
 # DH_DB_URL; see .env.example.
 db_url: ""
+
+# Priority-scoring weights applied by internal/scoring. score = w_severity *
+# sev_score + w_age * age_score + w_due * due_score. Defaults sum to 1.0;
+# overriding to a different sum scales the resulting score range.
+# Override via DH_SCORING__WEIGHT_SEVERITY / DH_SCORING__WEIGHT_AGE /
+# DH_SCORING__WEIGHT_DUE (note double underscore — maps to the nested key).
+scoring:
+  weight_severity: 0.5
+  weight_age: 0.2
+  weight_due: 0.3
+
+# Staleness heuristic: a ticket is flagged stale when its last support-side
+# event is older than threshold_days. Override via DH_STALENESS__THRESHOLD_DAYS.
+staleness:
+  threshold_days: 3
