@@ -27,6 +27,22 @@ ALTER TABLE ticket_events DROP CONSTRAINT ticket_events_ticket_id_event_ts_autho
 ALTER TABLE ticket_events ADD CONSTRAINT ticket_events_idem_key UNIQUE (ticket_id, event_ts, author_name, body_hash);
 
 -- +goose Down
+-- DOWN is lossy by design. Once UP has been applied and ingest has started
+-- preserving distinct-body entries at the same (ticket, second, author)
+-- triple, the original 3-column UNIQUE can no longer hold without removing
+-- the "extra" rows. We keep the lowest-id row per 3-col group (= the first
+-- observed body at that triple) and delete the rest BEFORE recreating the
+-- 3-col UNIQUE. An operator downgrading past 0006 implicitly accepts that
+-- loss; the only alternative is to refuse to downgrade, which would defeat
+-- goose's purpose as a recovery tool. Code-review flagged the prior version
+-- of this DOWN block as silently failing on constraint violation — that
+-- failure mode is worse than the documented data loss.
+DELETE FROM ticket_events
+WHERE id NOT IN (
+    SELECT MIN(id) FROM ticket_events
+    GROUP BY ticket_id, event_ts, author_name
+);
+
 ALTER TABLE ticket_events DROP CONSTRAINT ticket_events_idem_key;
 ALTER TABLE ticket_events ADD CONSTRAINT ticket_events_ticket_id_event_ts_author_name_key UNIQUE (ticket_id, event_ts, author_name);
 ALTER TABLE ticket_events DROP COLUMN body_hash;

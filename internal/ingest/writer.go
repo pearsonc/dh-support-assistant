@@ -82,15 +82,15 @@ func Write(ctx context.Context, pool *pgxpool.Pool, hash, fileName string, recor
 		rec := &records[i]
 		clientID, err := upsertClient(ctx, tx, rec.BusinessService.ClientName)
 		if err != nil {
-			return s, err
+			return s, fmt.Errorf("ingest: record %q: %w", rec.TicketExternalID, err)
 		}
 		bsID, err := upsertBusinessService(ctx, tx, rec.BusinessService, clientID)
 		if err != nil {
-			return s, err
+			return s, fmt.Errorf("ingest: record %q: %w", rec.TicketExternalID, err)
 		}
 		res, err := upsertTicket(ctx, tx, rec, bsID, importID)
 		if err != nil {
-			return s, err
+			return s, fmt.Errorf("ingest: record %q: %w", rec.TicketExternalID, err)
 		}
 		if res.New {
 			s.TicketsNew++
@@ -99,7 +99,7 @@ func Write(ctx context.Context, pool *pgxpool.Pool, hash, fileName string, recor
 		}
 		newEvents, skippedEvents, err := insertEvents(ctx, tx, res.ID, importID, rec.Journal)
 		if err != nil {
-			return s, err
+			return s, fmt.Errorf("ingest: record %q: %w", rec.TicketExternalID, err)
 		}
 		s.EventsNew += newEvents
 		s.EventsSkipped += skippedEvents
@@ -144,6 +144,14 @@ func upsertImport(ctx context.Context, tx pgx.Tx, hash, fileName string, rowCoun
 	return id, false, nil
 }
 
+// DO UPDATE SET client_name = EXCLUDED.client_name is the standard
+// Postgres "upsert returning id" idiom when the row has no other mutable
+// columns: DO NOTHING would skip the RETURNING clause on conflict, forcing
+// a follow-up SELECT, while a no-op DO UPDATE lets RETURNING fire on every
+// path. Keeping this pattern consistent across upsertClient and
+// upsertBusinessService keeps the writer's happy path a single round-trip
+// per record. clients and business_services have no Phase 1 mutable fields
+// — any attribute change would be captured in a distinct raw_value / name.
 const upsertClientSQL = `
 INSERT INTO clients (client_name)
 VALUES ($1)

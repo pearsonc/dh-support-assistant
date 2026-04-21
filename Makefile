@@ -1,4 +1,4 @@
-.PHONY: build test lint clean run ingest docker-build docker-build-app \
+.PHONY: build test test-integration lint clean run ingest docker-build docker-build-app \
         docker-up docker-up-app docker-rebuild-app docker-down docker-pull \
         migrate migrate-down install help
 
@@ -11,7 +11,8 @@ help:
 	@echo "dh-support-assistant — available targets:"
 	@echo ""
 	@echo "  build              Compile all Go binaries to $(BINDIR)/"
-	@echo "  test               Run Go test suite"
+	@echo "  test               Run Go test suite (unit only)"
+	@echo "  test-integration   Run integration tests (requires Docker on host)"
 	@echo "  lint               go vet + gofmt check"
 	@echo "  clean              Remove build artefacts"
 	@echo "  run                Run the API server locally ($(GO) run ./cmd/server)"
@@ -34,6 +35,14 @@ build:
 
 test:
 	$(GO) test ./...
+
+# Integration tests gated by the `integration` build tag. Require Docker
+# reachable from the host — testcontainers-go provisions a fresh Postgres
+# per run. Kept out of `make test` so the default suite stays hermetic
+# (no daemon dependency); run this target before every commit that
+# touches internal/ingest or internal/db.
+test-integration:
+	$(GO) test -tags integration -count=1 -timeout=5m ./internal/ingest/...
 
 lint:
 	$(GO) vet ./...

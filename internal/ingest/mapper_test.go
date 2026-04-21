@@ -24,6 +24,74 @@ func TestHeadersRejectsMissingRequired(t *testing.T) {
 	}
 }
 
+func TestMapRowRejectsMissingRequiredField(t *testing.T) {
+	t.Parallel()
+	// Build the narrowest valid column index, then blank each required
+	// string field in turn. The mapper reports the first offender; a
+	// missing-field case per required column isn't worth the noise — one
+	// representative field proves the whole guard fires.
+	cols := map[string]int{
+		colNumber: 0, colShortDesc: 1, colDescription: 2,
+		colState: 3, colPriority: 4, colSeverity: 5, colUrgency: 6, colImpact: 7,
+		colAssignmentGroup: 8, colOpened: 9, colUpdated: 10, colOpenedBy: 11,
+		colUpdatedBy: 12, colCaller: 13, colBusinessService: 14, colCreated: 15,
+		colCreatedBy: 16, colDueDate: 17, colComments: 18,
+	}
+	base := func() []string {
+		return []string{
+			"INC0000999", "Short", "Desc",
+			"Open", "High", "2", "High", "Medium",
+			"Group", "45123.4", "45124.4", "opener", "updater", "caller",
+			"Cloud X-US Y", "45123.4", "creator", "45130.4", "",
+		}
+	}
+
+	for field, idx := range map[string]int{
+		"ticket_external_id": 0,
+		"short_description":  1,
+		"state":              3,
+		"caller":             13,
+	} {
+		field, idx := field, idx
+		t.Run(field, func(t *testing.T) {
+			t.Parallel()
+			row := base()
+			row[idx] = ""
+			_, err := MapRow(cols, row)
+			if err == nil || !strings.Contains(err.Error(), field) {
+				t.Fatalf("expected error mentioning %q; got %v", field, err)
+			}
+		})
+	}
+}
+
+func TestMapRowRejectsInvalidOLESerial(t *testing.T) {
+	t.Parallel()
+	cols := map[string]int{
+		colNumber: 0, colShortDesc: 1, colDescription: 2,
+		colState: 3, colPriority: 4, colSeverity: 5, colUrgency: 6, colImpact: 7,
+		colAssignmentGroup: 8, colOpened: 9, colUpdated: 10, colOpenedBy: 11,
+		colUpdatedBy: 12, colCaller: 13, colBusinessService: 14, colCreated: 15,
+		colCreatedBy: 16, colDueDate: 17, colComments: 18,
+	}
+	row := []string{
+		"INC0000998", "Short", "Desc",
+		"Open", "High", "2", "High", "Medium",
+		"Group", "not-a-serial", "45124.4", "opener", "updater", "caller",
+		"Cloud X-US Y", "45123.4", "creator", "45130.4", "",
+	}
+	_, err := MapRow(cols, row)
+	if err == nil || !strings.Contains(err.Error(), "OLE serial") {
+		t.Fatalf("expected OLE-serial error; got %v", err)
+	}
+
+	row[9] = ""
+	_, err = MapRow(cols, row)
+	if err == nil || !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("expected empty-date error; got %v", err)
+	}
+}
+
 func TestHeadersAcceptsMissingOptionalColumns(t *testing.T) {
 	t.Parallel()
 	// Optional columns (Assigned to, Company, Category, Subcategory,
