@@ -40,9 +40,11 @@ test:
 # reachable from the host — testcontainers-go provisions a fresh Postgres
 # per run. Kept out of `make test` so the default suite stays hermetic
 # (no daemon dependency); run this target before every commit that
-# touches internal/ingest or internal/db.
+# touches internal/ingest, internal/db, internal/queries, or internal/api.
+# Widened from ./internal/ingest/... to ./internal/... in Phase 2.1 when
+# the api package gained its own integration test against a live DB.
 test-integration:
-	$(GO) test -tags integration -count=1 -timeout=5m ./internal/ingest/...
+	$(GO) test -tags integration -count=1 -timeout=5m ./internal/...
 
 lint:
 	$(GO) vet ./...

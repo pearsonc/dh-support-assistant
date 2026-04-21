@@ -1,6 +1,9 @@
 // Package server exposes the HTTP surface for dh-support-assistant. Phase 1.2
 // adds /readiness backed by a Postgres ping — the handler returns 200 only
-// when the pool exists AND the ping succeeds within a tight budget.
+// when the pool exists AND the ping succeeds within a tight budget. Phase
+// 2.1 adds the /api/* JSON surface consumed by the web dashboard; API
+// mounting is gated on a non-nil pool so `make run` without a DB still
+// boots cleanly with just /health + /readiness.
 package server
 
 import (
@@ -14,6 +17,9 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
+
+	"github.com/pearsonc/dh-support-assistant/internal/api"
+	"github.com/pearsonc/dh-support-assistant/internal/queries"
 )
 
 // readinessPingTimeout caps how long /readiness will wait on Postgres before
@@ -21,10 +27,10 @@ import (
 // hanging on a stuck pool.
 const readinessPingTimeout = 2 * time.Second
 
-// New builds a chi router mounting /health and /readiness. pool may be nil —
-// when it is, /readiness reports {"status":"no_db"} and 503 so `make run`
-// (no DB configured) still boots cleanly. Inside Docker the pool is always
-// wired and /readiness flips to 200 once the DB accepts a ping.
+// New builds a chi router mounting /health, /readiness, and (when pool is
+// non-nil) /api/*. Pool may be nil — when it is, /readiness reports
+// {"status":"no_db"} and 503 and the /api tree is omitted so handlers don't
+// panic on a missing dependency. Inside Docker the pool is always wired.
 func New(logger zerolog.Logger, pool *pgxpool.Pool) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -33,7 +39,14 @@ func New(logger zerolog.Logger, pool *pgxpool.Pool) http.Handler {
 	r.Get("/health", healthHandler)
 	r.Get("/readiness", readinessHandler(logger, pool))
 
-	logger.Info().Msg("router mounted: /health, /readiness")
+	if pool != nil {
+		apiHandler := api.New(logger, queries.New(pool))
+		r.Route("/api", apiHandler.Register)
+		logger.Info().Msg("router mounted: /health, /readiness, /api/*")
+	} else {
+		logger.Info().Msg("router mounted: /health, /readiness (no pool — /api omitted)")
+	}
+
 	return r
 }
 

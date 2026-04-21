@@ -1,0 +1,350 @@
+openapi: 3.1.0
+info:
+  title: DH Support Assistant API
+  version: "2.1.0"
+  description: |
+    Read-only JSON API backing the Phase 2 Next.js dashboard. All endpoints
+    are served from the Go app container on the internal support-net;
+    the web container proxies them to the host browser. Phase 2.1 ships
+    counts + ticket listing; priority scoring and staleness land in 2.2.
+
+servers:
+  - url: http://app:8080
+    description: Container-internal (support-net)
+  - url: http://localhost:8080
+    description: Host-local (only when app is bind-published in dev)
+
+paths:
+  /api/stats:
+    get:
+      summary: Aggregate dashboard counts
+      operationId: getStats
+      responses:
+        "200":
+          description: Stats payload
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatsResult" }
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/tickets:
+    get:
+      summary: List tickets (paginated, filterable, sortable)
+      operationId: listTickets
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [updated_at_desc, opened_at_desc, due_date_asc]
+            default: updated_at_desc
+        - in: query
+          name: severity
+          description: Optional exact-match filter on severity display string.
+          schema: { type: string }
+        - in: query
+          name: state
+          description: Optional exact-match filter on state display string.
+          schema: { type: string }
+      responses:
+        "200":
+          description: Page of tickets
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TicketListEnvelope" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/tickets/{id}:
+    get:
+      summary: Ticket detail with full event timeline
+      operationId: getTicket
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200":
+          description: Ticket + events
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TicketDetailEnvelope" }
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/clients:
+    get:
+      summary: Clients with ticket / business-service counts
+      operationId: listClients
+      responses:
+        "200":
+          description: All clients with roll-up
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClientListEnvelope" }
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/markets:
+    get:
+      summary: Country-pivoted roll-up over business_services
+      operationId: listMarkets
+      description: |
+        `country_code` may be `null` for internal (non-client) services
+        such as `dunnhumby Enterprise Monitoring`. The web client renders
+        `null` as "Internal".
+      responses:
+        "200":
+          description: All markets (one row per distinct country_code)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MarketListEnvelope" }
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+components:
+  responses:
+    BadRequest:
+      description: Malformed request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    InternalError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  schemas:
+    PageMeta:
+      type: object
+      required: [total, limit, offset]
+      properties:
+        total:  { type: integer }
+        limit:  { type: integer }
+        offset: { type: integer }
+
+    TicketListItem:
+      type: object
+      required:
+        - id
+        - ticket_external_id
+        - short_description
+        - state
+        - severity
+        - priority
+        - assignment_group
+        - opened_at
+        - updated_at
+        - due_date
+        - business_service_id
+      properties:
+        id:                   { type: integer, format: int64 }
+        ticket_external_id:   { type: string }
+        short_description:    { type: string }
+        state:                { type: string }
+        severity:             { type: string }
+        priority:             { type: string }
+        assigned_to:          { type: [string, "null"] }
+        assignment_group:     { type: string }
+        opened_at:            { type: string, format: date-time }
+        updated_at:           { type: string, format: date-time }
+        due_date:             { type: string, format: date-time }
+        business_service_id:  { type: integer, format: int64 }
+        client_id:            { type: [integer, "null"], format: int64 }
+        client_name:          { type: [string, "null"] }
+        country_code:         { type: [string, "null"] }
+        product:              { type: [string, "null"] }
+
+    TicketListEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/TicketListItem" }
+        meta: { $ref: "#/components/schemas/PageMeta" }
+
+    TicketDetail:
+      type: object
+      required:
+        - id
+        - ticket_external_id
+        - short_description
+        - description
+        - state
+        - priority
+        - severity
+        - urgency
+        - impact
+        - assignment_group
+        - opened_at
+        - updated_at
+        - opened_by
+        - updated_by
+        - caller
+        - business_service_id
+        - created_at
+        - created_by
+        - due_date
+      properties:
+        id:                   { type: integer, format: int64 }
+        ticket_external_id:   { type: string }
+        short_description:    { type: string }
+        description:          { type: string }
+        state:                { type: string }
+        priority:             { type: string }
+        severity:             { type: string }
+        urgency:              { type: string }
+        impact:               { type: string }
+        assigned_to:          { type: [string, "null"] }
+        assignment_group:     { type: string }
+        opened_at:            { type: string, format: date-time }
+        updated_at:           { type: string, format: date-time }
+        opened_by:            { type: string }
+        updated_by:           { type: string }
+        caller:               { type: string }
+        company_raw:          { type: [string, "null"] }
+        business_service_id:  { type: integer, format: int64 }
+        created_at:           { type: string, format: date-time }
+        created_by:           { type: string }
+        category:             { type: [string, "null"] }
+        subcategory:          { type: [string, "null"] }
+        due_date:             { type: string, format: date-time }
+        jira_id:              { type: [string, "null"] }
+        jira_key:             { type: [string, "null"] }
+        jira_url:             { type: [string, "null"] }
+        jira_project:         { type: [string, "null"] }
+        jira_status:          { type: [string, "null"] }
+        client_id:            { type: [integer, "null"], format: int64 }
+        client_name:          { type: [string, "null"] }
+        country_code:         { type: [string, "null"] }
+        product:              { type: [string, "null"] }
+
+    TicketEventItem:
+      type: object
+      required: [id, event_ts, author_name, author_context, body]
+      properties:
+        id:             { type: integer, format: int64 }
+        event_ts:       { type: string, format: date-time }
+        author_name:    { type: string }
+        author_context: { type: string }
+        body:           { type: string }
+
+    TicketDetailEnvelope:
+      type: object
+      required: [ticket, events]
+      properties:
+        ticket: { $ref: "#/components/schemas/TicketDetail" }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/TicketEventItem" }
+
+    ClientRollup:
+      type: object
+      required:
+        - id
+        - client_name
+        - first_seen_at
+        - ticket_count
+        - business_service_count
+      properties:
+        id:                     { type: integer, format: int64 }
+        client_name:            { type: string }
+        first_seen_at:          { type: string, format: date-time }
+        ticket_count:           { type: integer }
+        business_service_count: { type: integer }
+
+    ClientListEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/ClientRollup" }
+
+    MarketRollup:
+      type: object
+      required:
+        - country_code
+        - client_count
+        - business_service_count
+        - ticket_count
+      properties:
+        country_code:           { type: [string, "null"] }
+        client_count:           { type: integer }
+        business_service_count: { type: integer }
+        ticket_count:           { type: integer }
+
+    MarketListEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/MarketRollup" }
+
+    LastImport:
+      type: object
+      required: [id, file_name, row_count, ingested_at]
+      properties:
+        id:          { type: integer, format: int64 }
+        file_name:   { type: string }
+        row_count:   { type: integer }
+        ingested_at: { type: string, format: date-time }
+
+    StatsResult:
+      type: object
+      required:
+        - tickets_total
+        - tickets_by_state
+        - tickets_by_severity
+        - clients_total
+        - business_services_total
+        - last_import
+      properties:
+        tickets_total:    { type: integer }
+        tickets_by_state:
+          type: object
+          additionalProperties: { type: integer }
+        tickets_by_severity:
+          type: object
+          additionalProperties: { type: integer }
+        clients_total:            { type: integer }
+        business_services_total:  { type: integer }
+        last_import:
+          oneOf:
+            - $ref: "#/components/schemas/LastImport"
+            - type: "null"
+
+    ErrorBody:
+      type: object
+      required: [code, message]
+      properties:
+        code:    { type: string }
+        message: { type: string }
+
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error: { $ref: "#/components/schemas/ErrorBody" }

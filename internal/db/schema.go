@@ -15,7 +15,13 @@ import "time"
 //   - Ticket.Category     (81%  populated)
 //   - Ticket.Subcategory  (81%  populated)
 //   - Ticket.Jira*        (0%   populated; reserved)
-//   - BusinessService.ClientID/CountryCode/Product (null for internal services)
+//   - BusinessServiceRow.ClientID/CountryCode/Product (null for internal services)
+//
+// Note: the "Row" suffix on BusinessServiceRow disambiguates this DB-row type
+// from domain.BusinessService, which is the parsed-cell value type used by
+// the ingest path. Other row types in this file don't collide with domain
+// types so don't carry the suffix; keep the suffix convention scoped to the
+// names that actually conflict.
 
 type Import struct {
 	ID         int64     `db:"id"`
@@ -31,7 +37,7 @@ type Client struct {
 	FirstSeenAt time.Time `db:"first_seen_at"`
 }
 
-type BusinessService struct {
+type BusinessServiceRow struct {
 	ID          int64   `db:"id"`
 	RawValue    string  `db:"raw_value"`
 	Platform    string  `db:"platform"`
