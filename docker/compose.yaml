@@ -1,0 +1,15 @@
+# Docker Compose skeleton for dh-support-assistant.
+#
+# Phase 1 will:
+#   * Build the `app` image from a Dockerfile in this directory.
+#   * Pin `postgres` to the latest 16.x image with pgvector extension.
+#   * Pin `ollama` with a model-volume mount.
+#   * Configure the `support-net` as internal: true per [Rule: Zero egress].
+#
+# Phases 2-6 add: web (Next.js), ne-tts, piper, n8n.
+
+services: {}
+networks:
+  support-net:
+    driver: bridge
+    internal: true

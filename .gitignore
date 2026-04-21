@@ -1,0 +1,42 @@
+# Sensitive - NEVER commit
+# ServiceNow exports contain commercially sensitive client data
+# per [Rule: Zero egress] in Claude/Rules/dh-support-assistant/rules.md
+export-data/
+*.xlsx
+*.csv
+*.xls
+.env
+.env.*
+!.env.example
+
+# Go
+/bin/
+/dist/
+/build/
+*.test
+*.out
+vendor/
+
+# Logs and runtime
+logs/
+tmp/
+*.log
+
+# Docker volumes and DB data
+data/
+postgres-data/
+ollama-models/
+piper-models/
+
+# Node (Phase 2 Next.js under web/)
+/web/node_modules/
+/web/.next/
+/web/out/
+/web/build/
+
+# Editor and OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
