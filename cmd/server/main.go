@@ -10,10 +10,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/pearsonc/dh-support-assistant/internal/config"
+	"github.com/pearsonc/dh-support-assistant/internal/db"
 	"github.com/pearsonc/dh-support-assistant/internal/logging"
 	"github.com/pearsonc/dh-support-assistant/internal/server"
 )
+
+const dbBootTimeout = 10 * time.Second
 
 func main() {
 	if err := run(); err != nil {
@@ -42,11 +47,27 @@ func run() error {
 		Str("listen_addr", cfg.ListenAddr).
 		Str("log_path", cfg.LogPath).
 		Str("log_level", cfg.LogLevel).
+		Bool("db_configured", cfg.DBURL != "").
 		Msg("server starting")
+
+	var pool *pgxpool.Pool
+	if cfg.DBURL != "" {
+		bootCtx, cancel := context.WithTimeout(context.Background(), dbBootTimeout)
+		pool, err = db.NewPool(bootCtx, cfg.DBURL)
+		cancel()
+		if err != nil {
+			logger.Error().Err(err).Msg("db pool construction failed")
+			return fmt.Errorf("db pool: %w", err)
+		}
+		defer pool.Close()
+		logger.Info().Msg("db pool connected")
+	} else {
+		logger.Warn().Msg("db_url not configured; readiness will report no_db")
+	}
 
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
-		Handler:           server.New(logger),
+		Handler:           server.New(logger, pool),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

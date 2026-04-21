@@ -6,6 +6,7 @@
 #   listen_addr  <-  DH_LISTEN_ADDR
 #   log_path     <-  DH_LOG_PATH
 #   log_level    <-  DH_LOG_LEVEL
+#   db_url       <-  DH_DB_URL
 #
 # Precedence (highest first): env > config.yaml > built-in defaults.
 
@@ -17,3 +18,8 @@ log_path: "logs/app.log"
 
 # Log level: trace | debug | info | warn | error | fatal | panic | disabled.
 log_level: "info"
+
+# Postgres connection string. Empty => /readiness reports "no_db" and DB
+# operations are unavailable. Docker Compose supplies the in-stack value via
+# DH_DB_URL; see .env.example.
+db_url: ""

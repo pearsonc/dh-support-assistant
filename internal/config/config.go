@@ -21,12 +21,14 @@ const (
 	KeyListenAddr = "listen_addr"
 	KeyLogPath    = "log_path"
 	KeyLogLevel   = "log_level"
+	KeyDBURL      = "db_url"
 )
 
 const (
 	defaultListenAddr = ":8080"
 	defaultLogPath    = "logs/app.log"
 	defaultLogLevel   = "info"
+	defaultDBURL      = ""
 )
 
 const envPrefix = "DH_"
@@ -35,6 +37,7 @@ type Config struct {
 	ListenAddr string `koanf:"listen_addr"`
 	LogPath    string `koanf:"log_path"`
 	LogLevel   string `koanf:"log_level"`
+	DBURL      string `koanf:"db_url"`
 }
 
 // Load resolves configuration. configPath may be empty; a non-existent file at
@@ -47,6 +50,7 @@ func Load(configPath string) (*Config, error) {
 		KeyListenAddr: defaultListenAddr,
 		KeyLogPath:    defaultLogPath,
 		KeyLogLevel:   defaultLogLevel,
+		KeyDBURL:      defaultDBURL,
 	}, "."), nil); err != nil {
 		return nil, fmt.Errorf("config: load defaults: %w", err)
 	}

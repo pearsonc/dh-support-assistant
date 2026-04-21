@@ -1,15 +1,93 @@
-# Docker Compose skeleton for dh-support-assistant.
+# Docker Compose topology for dh-support-assistant.
 #
-# Phase 1 will:
-#   * Build the `app` image from a Dockerfile in this directory.
-#   * Pin `postgres` to the latest 16.x image with pgvector extension.
-#   * Pin `ollama` with a model-volume mount.
-#   * Configure the `support-net` as internal: true per [Rule: Zero egress].
+# [Rule: Zero egress]
+#   support-net is `internal: true` — containers on it cannot reach external
+#   hosts. The app's entrypoint re-verifies this at every boot: a successful
+#   `nslookup example.com` aborts start. Manual check from the host:
+#     docker compose exec app sh -c 'nslookup example.com'   # exits non-zero
+#   (The plan specifies `getent`, but it's not in the alpine base image; the
+#   busybox `nslookup` applet is the equivalent that ships out-of-the-box.)
 #
-# Phases 2-6 add: web (Next.js), ne-tts, piper, n8n.
+# Phase 1 services:
+#   app       — Go API + ingest binaries built from docker/Dockerfile.
+#   postgres  — pgvector/pgvector:pg16. Vector extension bundled but NOT
+#               enabled (CREATE EXTENSION lives in the Phase 4 migration).
+#   ollama    — present for network topology only; no model pulled. Health-
+#               check omitted (Phase 1 Risk #5): Ollama HTTP API would flap
+#               without a model. Phase 3 re-enables it.
+#
+# Phase 2+ will add: web (Next.js), ne-tts, piper, n8n — all on support-net.
 
-services: {}
+name: dh-support-assistant
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    # Run as the host user so the bind-mounted ../logs is writable. The
+    # Dockerfile's USER 65534 is the production-safe default; this override
+    # only applies in this local dev stack where logs are surfaced to the
+    # host filesystem. Override via UID/GID env if your account differs from
+    # 1000:1000 (Linux desktop default).
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      DH_DB_URL: "postgres://dh:dh@postgres:5432/dh?sslmode=disable"
+      DH_LISTEN_ADDR: ":8080"
+      DH_LOG_LEVEL: "${DH_LOG_LEVEL:-info}"
+    # NOTE: no `ports:` directive. Docker silently disables host port
+    # publishing on `internal: true` networks (the docker-proxy never starts).
+    # Keeping the network internal preserves the [Rule: Zero egress] guarantee
+    # at the network layer; the cost is that the API isn't reachable from the
+    # host browser. Phase 1.2 verifies via:
+    #     docker compose exec app wget -qO- http://localhost:8080/readiness
+    # Phase 2 will introduce an ingress strategy (likely a `web` container on
+    # support-net that proxies the API and publishes its own port via a
+    # separate, ingress-only network).
+    volumes:
+      - ../logs:/app/logs
+    networks:
+      - support-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    # Digest pin (Phase 1.2 hard-stop, Risk #3): freezes the image at the
+    # exact build verified during this phase. Bump deliberately by re-pulling
+    # and copying the new digest from `docker image ls --digests`.
+    image: pgvector/pgvector:pg16@sha256:7d400e340efb42f4d8c9c12c6427adb253f726881a9985d2a471bf0eed824dff
+    environment:
+      POSTGRES_USER: dh
+      POSTGRES_PASSWORD: dh
+      POSTGRES_DB: dh
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dh -d dh"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - support-net
+    restart: unless-stopped
+
+  ollama:
+    # Digest pin: prevents accidental 3.6GB re-pulls when bumping unrelated
+    # services. Bump deliberately when Phase 3 needs a newer ollama runtime.
+    image: ollama/ollama:latest@sha256:d3d553bdfbcc7f55dd5ddf42c4cbe3a927aa9bb1802710d35e94656ca5aea02b
+    volumes:
+      - ollama-models:/root/.ollama
+    networks:
+      - support-net
+    restart: unless-stopped
+
 networks:
   support-net:
     driver: bridge
     internal: true
+
+volumes:
+  postgres-data:
+  ollama-models:
