@@ -1,6 +1,6 @@
 .PHONY: build test lint clean run ingest docker-build docker-build-app \
         docker-up docker-up-app docker-rebuild-app docker-down docker-pull \
-        migrate install help
+        migrate migrate-down install help
 
 GO           ?= go
 BINDIR       ?= bin
@@ -16,7 +16,8 @@ help:
 	@echo "  clean              Remove build artefacts"
 	@echo "  run                Run the API server locally ($(GO) run ./cmd/server)"
 	@echo "  ingest FILE=x      Run the ingest CLI against FILE"
-	@echo "  migrate            Apply goose migrations to the configured DB"
+	@echo "  migrate            Apply goose migrations to DH_DB_URL (ad-hoc)"
+	@echo "  migrate-down       Roll back the most recent goose migration"
 	@echo "  install            go install all binaries"
 	@echo ""
 	@echo "  docker-up          Bring up the FULL stack (app + postgres + ollama)"
@@ -48,8 +49,18 @@ ingest:
 	@if [ -z "$(FILE)" ]; then echo "usage: make ingest FILE=path/to/export.xlsx"; exit 2; fi
 	$(GO) run ./cmd/ingest -file=$(FILE)
 
+# Host-side ad-hoc migrations. Requires DH_DB_URL in the environment
+# pointing at a reachable Postgres (the containerised stack applies
+# migrations automatically at app startup — see cmd/server/main.go —
+# so this target is only for out-of-stack dev against a Postgres that
+# has been published to the host, e.g. via a compose override).
 migrate:
-	@echo "goose migrations - configured in Phase 1 plan"
+	@if [ -z "$$DH_DB_URL" ]; then echo "DH_DB_URL not set. Host-side migrate needs a reachable Postgres URL."; exit 2; fi
+	$(GO) run ./cmd/server -migrate=up
+
+migrate-down:
+	@if [ -z "$$DH_DB_URL" ]; then echo "DH_DB_URL not set. Host-side migrate needs a reachable Postgres URL."; exit 2; fi
+	$(GO) run ./cmd/server -migrate=down
 
 install:
 	$(GO) install ./...
