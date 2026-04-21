@@ -34,6 +34,10 @@ piper-models/
 /web/out/
 /web/build/
 
+# Runtime config (example is checked in)
+config.yaml
+!config.yaml.example
+
 # Editor and OS
 .vscode/
 .idea/

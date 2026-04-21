@@ -1,0 +1,19 @@
+# dh-support-assistant runtime configuration.
+#
+# Copy to config.yaml to use. The runtime config.yaml is gitignored.
+# Every key here can be overridden by a DH_-prefixed environment variable:
+#
+#   listen_addr  <-  DH_LISTEN_ADDR
+#   log_path     <-  DH_LOG_PATH
+#   log_level    <-  DH_LOG_LEVEL
+#
+# Precedence (highest first): env > config.yaml > built-in defaults.
+
+# HTTP listen address for the API server. ":PORT" binds all interfaces.
+listen_addr: ":8080"
+
+# Path to the structured application log. Directory is created at startup.
+log_path: "logs/app.log"
+
+# Log level: trace | debug | info | warn | error | fatal | panic | disabled.
+log_level: "info"
